@@ -20,76 +20,46 @@ class Module_Scraper():
 	def __init__(self):
 		pass
 
+	@wrap_skipEvent()
 	def onBeginScrape(self, event):
 		addresses = set()
-		with open("s20190513.log", "r", encoding = "iso-8859-15") as fileHandle:
+		self.frame_main.setStatusText("Found: 0")
+		with open(self.input_filepath, "r", encoding = "iso-8859-15") as fileHandle:
 			for line in fileHandle:
-				if ("Authentication credentials invalid" in line):
-					match = re.search("^(\d*\.\d*\.\d*\.\d*)", line)
-					if (not match):
-						print(f"Unable to find IP Address in line: {line}")
-						continue
+				if ("Authentication credentials invalid" not in line):
+					continue
+					
+				match = re.search("^(\d*\.\d*\.\d*\.\d*)", line)
+				if (not match):
+					self.log_error(f"Unable to find IP Address in line: {line}")
+					continue
 
-					addresses.add(match.group(1))
+				addresses.add(match.group(1))
+				self.frame_main.setStatusText(f"Found: {len(addresses)}")
 
-		print(addresses)
+		self.frame_main.setStatusText("Writing File...")
+		with open(self.output_filepath, "w") as fileHandle:
+			for item in sorted(addresses):
+				fileHandle.write(f"{item}\n")
+
+		self.frame_main.setStatusText()
 
 	def check_input(self, toggle_buttonEnable = True):
 		"""Makes sure the input path is correctly formatted."""
 
 		value = self.getSettingAppWidget("input_filepath").getValue()
 		if (not value):
-			self.frame_main.setStatusText("Missing Input Path")
-			state = False
-		elif ((not validator_collection.checkers.is_file(value)) or (not os.path.exists(value))):
-			self.frame_main.setStatusText("Invalid Input Path")
-			state = False
-		else:
-			state = True
-
-		if (not toggle_buttonEnable):
-			return state
+			return "Missing Input Path"
 		
-		if (state):
-			state = self.check_output(toggle_buttonEnable = False)
-		self.setButtonEnable(state = state)
-
-		return state
+		if ((not validator_collection.checkers.is_file(value)) or (not os.path.exists(value))):
+			return "Invalid Input Path"
 
 	def check_output(self, toggle_buttonEnable = True):
 		"""Makes sure the output path is correctly formatted."""
 
 		value = self.getSettingAppWidget("output_filepath").getValue()
 		if (not value):
-			self.frame_main.setStatusText("Missing Output Path")
-			state = False
-		else:
-			state = True
-
-		if (not toggle_buttonEnable):
-			return state
-		
-		if (state):
-			state = self.check_input(toggle_buttonEnable = False)
-		self.setButtonEnable(state = state)
-
-		return state
-
-	def onCheck_input(self, event):
-		"""A wxEvent version of check_input()."""
-		self.check_input()
-		event.Skip()
-
-	def onCheck_output(self, event):
-		"""A wxEvent version of check_output()."""
-		self.check_output()
-		event.Skip()
-
-	def setButtonEnable(self, state):
-		if (state):
-			self.frame_main.setStatusText("Ready")
-
-		self.button_go.setEnable(state = state)
+			return "Missing Output Path"
 
 class Module_Settings():
 	def __init__(self, filePath = "settings.ini", section = "parameters"):
@@ -137,6 +107,7 @@ class Module_GUI():
 		with self.frame_main as myFrame:
 			# myFrame.setWindowSize((400, 200))
 			myFrame.addStatusBar()
+			myFrame.setStatusTextDefault("Ready")
 
 			with myFrame.addMenu(text = "&File") as myMenu:
 				with myMenu.addItem(text = "&Exit") as myMenuItem:
@@ -179,14 +150,12 @@ class Module_GUI():
 					contentSizer.addText("Input:")
 					with contentSizer.addPickerFile(text = "The file(s) to search", label = "input_filepath", openFile = True, fileMustExist = True, addInputBox = True) as myWidget:
 						self.addSettingWidget("input_filepath", myWidget, checkFunction = self.check_input, toggleWidget = self.button_go)
-						# myWidget.setFunction_click(self.onCheck_input)
 						myWidget.setFunction_click(myFunction = self.onChangeSetting, myFunctionKwargs = {"myWidget": myWidget, "check": True})
 						myWidget.addToolTip("What file(s) to search through")
 
 					contentSizer.addText("Output:")
 					with contentSizer.addPickerFile(text = "Select where to save output...", label = "output_filepath", saveFile = True, saveConfirmation = True, addInputBox = True) as myWidget:
 						self.addSettingWidget("output_filepath", myWidget, checkFunction = self.check_output, toggleWidget = self.button_go)
-						# myWidget.setFunction_click(self.onCheck_output)
 						myWidget.setFunction_click(myFunction = self.onChangeSetting, myFunctionKwargs = {"myWidget": myWidget, "check": True})
 						myWidget.addToolTip("Where the file should be saved")
 
@@ -212,9 +181,11 @@ class Controller(MyUtilities.logger.LoggingFunctions, Module_Settings, Module_GU
 	def begin(self):
 		self.buildGUI()
 
-		self.log_info("GUI Finished")
 		self.settings.setBuilding(False)
-		self.check_input()
+		self.settings.setUpdateWindow(self.frame_main)
+		self.settings.checkAll()
+
+		self.log_info("GUI Finished")
 		self.frame_main.showWindow()
 		self.frame_main.updateWindow(updateNested = True)
 		self.gui.finish()
