@@ -1,13 +1,13 @@
+import re
 import os
 import sys
-
-import re
-import validator_collection
+import shutil
 
 import GUI_Maker
 from API_Database import settingsLoader
 
 import MyUtilities.logger
+import MyUtilities.common
 import MyUtilities.wxPython
 
 #Setup logging
@@ -24,12 +24,18 @@ class Module_Scraper():
 	def onBeginScrape(self, event):
 		addresses = set()
 		self.frame_main.setStatusText("Found: 0")
+
+		if (self.only_subnet):
+			searcher = re.compile("^(\d*\.\d*)\.\d*\.\d*")
+		else:
+			searcher = re.compile("^(\d*\.\d*\.\d*\.\d*)")
+
 		with open(self.input_filepath, "r", encoding = "iso-8859-15") as fileHandle:
 			for line in fileHandle:
 				if ("Authentication credentials invalid" not in line):
 					continue
-					
-				match = re.search("^(\d*\.\d*\.\d*\.\d*)", line)
+
+				match = searcher.search(line)
 				if (not match):
 					self.log_error(f"Unable to find IP Address in line: {line}")
 					continue
@@ -51,7 +57,7 @@ class Module_Scraper():
 		if (not value):
 			return "Missing Input Path"
 		
-		if ((not validator_collection.checkers.is_file(value)) or (not os.path.exists(value))):
+		if (("." not in value) or (not os.path.exists(value))):
 			return "Invalid Input Path"
 
 	def check_output(self, toggle_buttonEnable = True):
@@ -62,8 +68,17 @@ class Module_Scraper():
 			return "Missing Output Path"
 
 class Module_Settings():
-	def __init__(self, filePath = "settings.ini", section = "parameters"):
-		self.settings = settingsLoader.build(self, filePath = filePath, section = section)
+	def __init__(self):
+
+		filePath = os.path.join(os.getenv('LOCALAPPDATA'), "LogScraper", "settings.ini")
+
+		if (not os.path.exists(filePath)):
+			directory, fileName = os.path.split(filePath)
+			if (not os.path.exists(directory)):
+				os.makedirs(directory)
+			shutil.copy2(fileName, directory)
+
+		self.settings = settingsLoader.build(self, filePath = filePath)
 		self.settings.applyUserFunctions()
 
 class Module_GUI():
@@ -101,7 +116,7 @@ class Module_GUI():
 		self.buildMain()
 
 	def makeWindows(self):
-		self.frame_main = self.gui.addWindow(label = "main")
+		self.frame_main = self.gui.addWindow(label = "main", icon = "resources/scraper.ico")
 
 	def buildMain(self):
 		with self.frame_main as myFrame:
@@ -137,7 +152,7 @@ class Module_GUI():
 			with myFrame.addSizerGridFlex(rows = 2, columns = 1) as mainSizer:
 				mainSizer.growFlexColumnAll()
 
-				with mainSizer.addSizerGridFlex(rows = 2, columns = 2) as contentSizer:
+				with mainSizer.addSizerGridFlex(rows = 3, columns = 2) as contentSizer:
 					contentSizer.growFlexColumn(1)
 
 				with mainSizer.addSizerGridFlex(rows = 1, columns = 1) as mySizer:
@@ -150,7 +165,7 @@ class Module_GUI():
 					contentSizer.addText("Input:")
 					with contentSizer.addPickerFile(text = "The file(s) to search", label = "input_filepath", openFile = True, fileMustExist = True, addInputBox = True) as myWidget:
 						self.addSettingWidget("input_filepath", myWidget, checkFunction = self.check_input, toggleWidget = self.button_go)
-						myWidget.setFunction_click(myFunction = self.onChangeSetting, myFunctionKwargs = {"myWidget": myWidget, "check": True})
+						myWidget.setFunction_click(myFunction = self.onChangeSetting, myFunctionKwargs = {"myWidget": myWidget, "check": True, "setterFunction": MyUtilities.common.ensure_filePath})
 						myWidget.addToolTip("What file(s) to search through")
 
 					contentSizer.addText("Output:")
@@ -158,6 +173,12 @@ class Module_GUI():
 						self.addSettingWidget("output_filepath", myWidget, checkFunction = self.check_output, toggleWidget = self.button_go)
 						myWidget.setFunction_click(myFunction = self.onChangeSetting, myFunctionKwargs = {"myWidget": myWidget, "check": True})
 						myWidget.addToolTip("Where the file should be saved")
+
+					contentSizer.addText("Subnet Only:")
+					with contentSizer.addButtonCheck(label = "only_subnet") as myWidget:
+						self.addSettingWidget("only_subnet", myWidget)
+						myWidget.setFunction_click(myFunction = self.onChangeSetting, myFunctionKwargs = {"myWidget": myWidget})
+						myWidget.addToolTip("Determines what is extracted from the log file\nTrue: Only the subnet (xxx.xxx) is returned\nFalse: The whole address (xxx.xxx.xxx.xxx) is returned")
 
 class Controller(MyUtilities.logger.LoggingFunctions, Module_Settings, Module_GUI, Module_Scraper):
 	logger_config = {
@@ -190,6 +211,9 @@ class Controller(MyUtilities.logger.LoggingFunctions, Module_Settings, Module_GU
 		self.frame_main.updateWindow(updateNested = True)
 		self.gui.finish()
 
-if (__name__ == "__main__"):
+def main():
 	controller = Controller()
 	controller.begin()
+
+if (__name__ == "__main__"):
+	main()
